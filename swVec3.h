@@ -60,6 +60,11 @@ class Vec3 {
         return *this;
     }
 
+    float norm()
+    {
+        return std::sqrt(*this * *this);
+    }
+
   public:
     float m[3]{0.0f, 0.0f, 0.0f};
 };
