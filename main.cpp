@@ -63,9 +63,17 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
     lightDir.normalize();
     Vec3 normal = hit.normal.normalize();
 
-    directColor = hit.material.color * (lightDir * normal);
+    Ray shadowRay = hit.getShadowRay(lightPos);
+    if (scene.intersect(shadowRay, shadow, true)) {
+        directColor = Color(0.0f, 0.0f, 0.0f);
+    } else {
+        directColor = hit.material.color * (lightDir * normal);
+    }
 
-    c = directColor;
+    Ray reflectedRay = hit.getReflectedRay();
+    reflectedColor = traceRay(reflectedRay, scene, depth - 1);
+
+    c = (1 - hit.material.reflectivity) * directColor + hit.material.reflectivity * reflectedColor;
 
     return c;
 }
@@ -118,13 +126,11 @@ int main() {
     scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
     scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
 
-    // TODO: Uncomment to render reflective spheres
-    // scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
-    // scene.push(Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective));
+    scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
+    scene.push(Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective));
 
-    // TODO: Uncomment to render refractive spheres
-    // scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
-    // scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
+    scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
+    scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
 
     // Setup camera
     Vec3 eye(0.0f, 10.0f, 30.0f);

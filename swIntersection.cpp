@@ -12,10 +12,7 @@ Ray Intersection::getReflectedRay(void) {
     Vec3 N = normal;
     const Vec3 D = ray.dir;
 
-    // TODO: Implement reflection
-    // -------------------
-    Vec3 R = D;
-    // -------------------
+    Vec3 R = D - 2.0f * (D * N) * N;
 
     return Ray(position, R, 0.01f, FLT_MAX);
 }
