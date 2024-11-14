@@ -22,11 +22,10 @@ Ray Intersection::getRefractedRay(void) {
     Vec3 N = normal;
     float eta = 1.0f / material.refractiveIndex;
     if (!frontFacing) eta = 1.0f / eta; // Inside material.
+    float r = -D * N;
+    float c = 1.0f - eta * eta * (1.0f - r * r);
 
-    // TODO: Implement refraction
-    // -------------------
-    Vec3 R = D;
-    // -------------------
+    Vec3 R = eta * D + (eta * r - sqrt(c)) * N;
 
     return Ray(position, R, 0.01f, FLT_MAX);
 }

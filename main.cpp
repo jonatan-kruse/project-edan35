@@ -73,7 +73,10 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
     Ray reflectedRay = hit.getReflectedRay();
     reflectedColor = traceRay(reflectedRay, scene, depth - 1);
 
-    c = (1 - hit.material.reflectivity) * directColor + hit.material.reflectivity * reflectedColor;
+    Ray refractedRay = hit.getRefractedRay();
+    refractedColor = traceRay(refractedRay, scene, depth - 1);
+
+    c = (1 - hit.material.reflectivity - hit.material.transparency) * directColor + hit.material.reflectivity * reflectedColor + hit.material.transparency * refractedColor;
 
     return c;
 }
