@@ -144,6 +144,8 @@ int main() {
 
     // Ray trace pixels
     int depth = 3;
+    int ssGridSize = 3;
+    float ssStep = 1.0f / ssGridSize;
     std::cout << "Rendering... ";
     clock_t start = clock();
     for (int j = 0; j < imageHeight; ++j) {
@@ -155,9 +157,16 @@ int main() {
             float cx = ((float)i) + 0.5f;
             float cy = ((float)j) + 0.5f;
 
-            // Get a ray and trace it
-            Ray r = camera.getRay(cx, cy);
-            pixel = traceRay(r, scene, depth);
+            for (int k = 0; k < ssGridSize; ++k) {
+                for (int l = 0; l < ssGridSize; ++l) {
+                    cx = ((float)i) + ssStep * uniform() + ssStep * k;
+                    cy = ((float)j) + ssStep * uniform() + ssStep * l;
+
+                    // Get a ray and trace it
+                    Ray r = camera.getRay(cx, cy);
+                    pixel = pixel + traceRay(r, scene, depth) * (1.0f / (ssGridSize * ssGridSize));
+                }
+            }
 
             // Write pixel value to image
             writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
