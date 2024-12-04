@@ -11,6 +11,7 @@
 #include <ctime>
 #include <iostream>
 #include <random>
+#include <sstream>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -26,6 +27,7 @@
 #include "swVec3.h"
 
 using namespace sw;
+using namespace std;
 
 inline float clamp(float x, float min, float max) {
     if (x < min) return min;
@@ -76,7 +78,8 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
     Ray refractedRay = hit.getRefractedRay();
     refractedColor = traceRay(refractedRay, scene, depth - 1);
 
-    c = (1 - hit.material.reflectivity - hit.material.transparency) * directColor + hit.material.reflectivity * reflectedColor + hit.material.transparency * refractedColor;
+    c = (1 - hit.material.reflectivity - hit.material.transparency) * directColor +
+        hit.material.reflectivity * reflectedColor + hit.material.transparency * refractedColor;
 
     return c;
 }
@@ -85,23 +88,11 @@ int main() {
     const int imageWidth = 512;
     const int imageHeight = imageWidth;
     const int numChannels = 3;
-    uint8_t *pixels = new uint8_t[imageWidth * imageHeight * numChannels];
-
-    // Define materials
-    Material whiteDiffuse = Material(Color(0.9f, 0.9f, 0.9f), 0.0f, 0.0f, 1.0f);
-    Material greenDiffuse = Material(Color(0.1f, 0.6f, 0.1f), 0.0f, 0.0f, 1.0f);
-    Material redDiffuse = Material(Color(1.0f, 0.1f, 0.1f), 0.0f, 0.0f, 1.0f);
-    Material blueDiffuse = Material(Color(0.0f, 0.2f, 0.9f), 0.0f, 0.0f, 1.0f);
-    Material yellowReflective = Material(Color(1.0f, 0.6f, 0.1f), 0.2f, 0.0f, 1.0f);
-    Material transparent = Material(Color(1.0f, 1.0f, 1.0f), 0.2f, 0.8f, 1.3f);
-
-    // Setup scene
-    Scene scene;
-
-    // Add three spheres with diffuse material
-    scene.push(Sphere(Vec3(-7.0f, 3.0f, -20.0f), 3.0f, greenDiffuse));
-    scene.push(Sphere(Vec3(0.0f, 3.0f, -20.0f), 3.0f, blueDiffuse));
-    scene.push(Sphere(Vec3(7.0f, 3.0f, -20.0f), 3.0f, redDiffuse));
+    int depth = 3;
+    int ssGridSize = 1; // TODO set to higher when rendering for real
+    float ssStep = 1.0f / ssGridSize;
+    float time = 0.0f;
+    float dt = 0.05f;
 
     // Define vertices for Cornell box
     Vec3 vertices[] = {
@@ -117,68 +108,126 @@ int main() {
       Vec3(20.0f, 0.0f, 50.0f),   Vec3(20.0f, 0.0f, -50.0f),   Vec3(20.0f, 40.0f, -50.0f)   // Green wall 2
     };
 
-    scene.push(Triangle(&vertices[0], whiteDiffuse)); // Floor 1
-    scene.push(Triangle(&vertices[3], whiteDiffuse)); // Floor 2
+    vector<Vec3> floor = {Vec3(-20.0f, 0.0f, 50.0f), Vec3(20.0f, 0.0f, 50.0f), Vec3(20.0f, 0.0f, -50.0f),
+                          Vec3(-20.0f, 0.0f, -50.0f)};
+    vector<Vec3> backWall = {Vec3(-20.0f, 0.0f, -50.0f), Vec3(20.0f, 0.0f, -50.0f), Vec3(20.0f, 40.0f, -50.0f),
+                            Vec3(-20.0f, 40.0f, -50.0f)};
+    vector<Vec3> ceiling = {Vec3(-20.0f, 40.0f, 50.0f), Vec3(-20.0f, 40.0f, -50.0f), Vec3(20.0f, 40.0f, 50.0f),
+                            Vec3(20.0f, 40.0f, -50.0f)};
+    vector<Vec3> redWall = {Vec3(-20.0f, 0.0f, 50.0f), Vec3(-20.0f, 40.0f, -50.0f), Vec3(-20.0f, 40.0f, 50.0f),
+                            Vec3(-20.0f, 0.0f, -50.0f)};
+    vector<Vec3> greenWall = {Vec3(20.0f, 0.0f, 50.0f), Vec3(20.0f, 40.0f, 50.0f), Vec3(20.0f, 40.0f, -50.0f),
+                            Vec3(20.0f, 0.0f, -50.0f)};
+    vector<vector<Vec3>> walls = {floor, backWall, ceiling, redWall, greenWall};
 
-    scene.push(Triangle(&vertices[6], whiteDiffuse));  // Back wall 1
-    scene.push(Triangle(&vertices[9], whiteDiffuse));  // Back wall 2
-    scene.push(Triangle(&vertices[12], whiteDiffuse)); // Ceiling 1
-    scene.push(Triangle(&vertices[15], whiteDiffuse)); // Ceiling 2
-    scene.push(Triangle(&vertices[18], redDiffuse));   // Red wall 1
-    scene.push(Triangle(&vertices[21], redDiffuse));   // Red wall 2
-    scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
-    scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
+    // Define materials
+    Material whiteDiffuse = Material(Color(0.9f, 0.9f, 0.9f), 0.0f, 0.0f, 1.0f);
+    Material greenDiffuse = Material(Color(0.1f, 0.6f, 0.1f), 0.0f, 0.0f, 1.0f);
+    Material redDiffuse = Material(Color(1.0f, 0.1f, 0.1f), 0.0f, 0.0f, 1.0f);
+    Material blueDiffuse = Material(Color(0.0f, 0.2f, 0.9f), 0.0f, 0.0f, 1.0f);
+    Material yellowReflective = Material(Color(1.0f, 0.6f, 0.1f), 0.2f, 0.0f, 1.0f);
+    Material transparent = Material(Color(1.0f, 1.0f, 1.0f), 0.2f, 0.8f, 1.3f);
 
-    scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
-    scene.push(Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective));
+    Sphere s1 = Sphere(Vec3(-7.0f, 3.0f, -20.0f), 3.0f, greenDiffuse);
+    Sphere s2 = Sphere(Vec3(0.0f, 3.0f, -20.0f), 3.0f, blueDiffuse);
+    Sphere s3 = Sphere(Vec3(7.0f, 3.0f, -20.0f), 3.0f, redDiffuse);
 
-    scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
-    scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
+    Sphere reflectiveSphere1 = Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective);
+    Sphere reflectiveSphere2 = Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective);
 
-    // Setup camera
-    Vec3 eye(0.0f, 10.0f, 30.0f);
-    Vec3 lookAt(0.0f, 10.0f, -5.0f);
-    Vec3 up(0.0f, 1.0f, 0.0f);
-    Camera camera(eye, lookAt, up, 52.0f, (float)imageWidth / (float)imageHeight);
-    camera.setup(imageWidth, imageHeight);
+    Sphere transparentSphere1 = Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent);
+    Sphere transparentSphere2 = Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent);
 
-    // Ray trace pixels
-    int depth = 3;
-    int ssGridSize = 3;
-    float ssStep = 1.0f / ssGridSize;
-    std::cout << "Rendering... ";
-    clock_t start = clock();
-    for (int j = 0; j < imageHeight; ++j) {
-        for (int i = 0; i < imageWidth; ++i) {
+    s1.set_velocity(Vec3(0.0f, 0.0f, 3.0f));
+    s2.set_velocity(Vec3(0.0f, 3.0f, 0.0f));
+    s3.set_velocity(Vec3(3.0f, 0.0f, 0.0f));
 
-            Color pixel;
+    transparentSphere1.set_velocity(Vec3(0.0f, 0.0f, -3.0f));
+    transparentSphere2.set_velocity(Vec3(0.0f, 3.0f, 0.0f));
 
-            // Get center of pixel coordinate
-            float cx = ((float)i) + 0.5f;
-            float cy = ((float)j) + 0.5f;
+    reflectiveSphere1.set_velocity(Vec3(0.0f, 0.0f, -3.0f));
+    reflectiveSphere2.set_velocity(Vec3(0.0f, 3.0f, 0.0f));
 
-            for (int k = 0; k < ssGridSize; ++k) {
-                for (int l = 0; l < ssGridSize; ++l) {
-                    cx = ((float)i) + ssStep * uniform() + ssStep * k;
-                    cy = ((float)j) + ssStep * uniform() + ssStep * l;
+    vector<Sphere> spheres = {s1, s2, s3, reflectiveSphere1, reflectiveSphere2, transparentSphere1, transparentSphere2};
 
-                    // Get a ray and trace it
-                    Ray r = camera.getRay(cx, cy);
-                    pixel = pixel + traceRay(r, scene, depth) * (1.0f / (ssGridSize * ssGridSize));
+    while (time < 8.0f) {
+        // Setup scene
+        Scene scene;
+        uint8_t *pixels = new uint8_t[imageWidth * imageHeight * numChannels];
+
+        scene.push(Triangle(&vertices[0], whiteDiffuse)); // Floor 1
+        scene.push(Triangle(&vertices[3], whiteDiffuse)); // Floor 2
+
+        scene.push(Triangle(&vertices[6], whiteDiffuse));  // Back wall 1
+        scene.push(Triangle(&vertices[9], whiteDiffuse));  // Back wall 2
+        scene.push(Triangle(&vertices[12], whiteDiffuse)); // Ceiling 1
+        scene.push(Triangle(&vertices[15], whiteDiffuse)); // Ceiling 2
+        scene.push(Triangle(&vertices[18], redDiffuse));   // Red wall 1
+        scene.push(Triangle(&vertices[21], redDiffuse));   // Red wall 2
+        scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
+        scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
+
+        for (Sphere &s : spheres) {
+            for (vector<Vec3> &wall : walls) {
+                Vec3 normal = ((wall[1] - wall[0]) % (wall[2] - wall[0])).normalize();
+                float distance_to_wall = abs((wall[0] - s.center) * normal);
+                if (distance_to_wall < s.radius) {
+                    s.set_velocity(s.velocity - 1.9f * (s.velocity * normal) * normal);
+                    float penetration = s.radius - distance_to_wall;
+                    s.center = s.center + 2.0f * penetration * normal;
                 }
             }
-
-            // Write pixel value to image
-            writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
+            // gravity (always applied)
+            s.set_velocity(s.velocity + Vec3(0.0f, -dt * 9.8f, 0.0f));
+            
+            scene.push(s);
         }
+
+        // Setup camera
+        Vec3 eye(0.0f, 10.0f, 30.0f);
+        Vec3 lookAt(0.0f, 10.0f, -5.0f);
+        Vec3 up(0.0f, 1.0f, 0.0f);
+        Camera camera(eye, lookAt, up, 52.0f, (float)imageWidth / (float)imageHeight);
+        camera.setup(imageWidth, imageHeight);
+
+        // Ray trace pixels
+
+        std::cout << "Rendering... " << time << " s\n";
+        for (int j = 0; j < imageHeight; ++j) {
+            for (int i = 0; i < imageWidth; ++i) {
+
+                Color pixel;
+
+                // Get center of pixel coordinate
+                float cx = ((float)i) + 0.5f;
+                float cy = ((float)j) + 0.5f;
+
+                for (int k = 0; k < ssGridSize; ++k) {
+                    for (int l = 0; l < ssGridSize; ++l) {
+                        cx = ((float)i) + ssStep * uniform() + ssStep * k;
+                        cy = ((float)j) + ssStep * uniform() + ssStep * l;
+
+                        // Get a ray and trace it
+                        Ray r = camera.getRay(cx, cy);
+                        pixel = pixel + traceRay(r, scene, depth) * (1.0f / (ssGridSize * ssGridSize));
+                    }
+                }
+
+                // Write pixel value to image
+                writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
+            }
+        }
+        char *filename = new char[100];
+        sprintf(filename, "output%04d.png", (int)(time * 1000));
+        stbi_write_png(filename, imageWidth, imageHeight, numChannels, pixels, imageWidth * numChannels);
+        delete[] pixels;
+
+        for (Sphere &s : spheres) {
+            s.tick(dt);
+        }
+
+        time += dt;
     }
 
-    // Save image to file
-    stbi_write_png("out.png", imageWidth, imageHeight, numChannels, pixels, imageWidth * numChannels);
-
     // Free allocated memory
-    delete[] pixels;
-
-    std::cout << "Done\n";
-    std::cout << "Time: " << (float)(clock() - start) / CLOCKS_PER_SEC << " s" << std::endl;
 }
