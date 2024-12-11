@@ -40,3 +40,5 @@ out/
 build/
 
 .vscode/
+result1/*
+result2/*
